@@ -15,7 +15,9 @@
  */
 package com.android.systemui.qs;
 
+import android.bluetooth.BluetoothAdapter;
 import android.content.Context;
+import android.content.Intent;
 import android.content.res.Configuration;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
@@ -34,10 +36,19 @@ import android.media.session.MediaSession;
 import android.media.session.MediaSessionLegacyHelper;
 import android.media.session.MediaSessionManager;
 import android.media.session.PlaybackState;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkInfo;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
+import android.provider.Settings;
 import android.text.TextUtils;
+import android.telephony.SubscriptionInfo;
+import android.telephony.SubscriptionManager;
 import android.util.AttributeSet;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -48,6 +59,9 @@ import android.view.ViewGroup;
 
 import com.android.internal.graphics.ColorUtils;
 
+import com.android.settingslib.bluetooth.BluetoothCallback;
+import com.android.settingslib.bluetooth.LocalBluetoothAdapter;
+import com.android.settingslib.bluetooth.LocalBluetoothManager;
 import com.android.settingslib.Utils;
 
 import com.android.systemui.Dependency;
@@ -57,7 +71,10 @@ import com.android.systemui.lockscreen.ActivityLauncherUtils;
 import com.android.systemui.media.dialog.MediaOutputDialogFactory;
 import com.android.systemui.plugins.ActivityStarter;
 import com.android.systemui.plugins.FalsingManager;
+import com.android.systemui.qs.tiles.dialog.BluetoothDialogFactory;
+import com.android.systemui.qs.tiles.dialog.InternetDialogFactory;
 import com.android.systemui.qs.VerticalSlider;
+import com.android.systemui.statusbar.connectivity.AccessPointController;
 import com.android.systemui.statusbar.NotificationMediaManager;
 
 import androidx.annotation.NonNull;
@@ -71,7 +88,7 @@ import java.util.List;
 import android.os.SystemClock;
 import android.view.KeyEvent;
 
-public class QsControlsView extends FrameLayout {
+public class QsControlsView extends FrameLayout implements BluetoothCallback {
 
     private List<View> mMediaPlayerViews = new ArrayList<>();
     private List<View> mWidgetViews = new ArrayList<>();
@@ -83,18 +100,45 @@ public class QsControlsView extends FrameLayout {
     private QsControlsPageIndicator mMediaPageIndicator;
     private VerticalSlider mBrightnessSlider, mVolumeSlider;
 
-    private final ActivityStarter mActivityStarter;
+    private final ActivityStarter mActivityStarter;    
     private final FalsingManager mFalsingManager;
     private final MediaOutputDialogFactory mMediaOutputDialogFactory;
     private final NotificationMediaManager mNotifManager;
     private final ActivityLauncherUtils mActivityLauncherUtils;
+    
+    private final ConnectivityManager mConnectivityManager;
+    private final SubscriptionManager mSubManager;
+    private final WifiManager mWifiManager;
+    
+    private final BluetoothDialogFactory mBluetoothDialogFactory;
+    private final InternetDialogFactory mInternetDialogFactory;
+    private final AccessPointController mAccessPointController;
 
     private ViewPager mViewPager;
     private PagerAdapter pagerAdapter;
+    
+    private int colorActive = Utils.getColorAttrDefaultColor(mContext, android.R.attr.colorAccent);
+    private int colorInactive = Utils.getColorAttrDefaultColor(mContext, R.attr.offStateColor);
+    private int colorLabelActive = Utils.getColorAttrDefaultColor(mContext, com.android.internal.R.attr.textColorPrimaryInverse);
+    private int colorLabelInactive = Utils.getColorAttrDefaultColor(mContext, android.R.attr.textColorPrimary);
+    private int colorSecondaryLabelActive = Utils.getColorAttrDefaultColor(mContext, android.R.attr.textColorSecondaryInverse);
+    private int colorSecondaryLabelInactive = Utils.getColorAttrDefaultColor(mContext, android.R.attr.textColorSecondary);
 
     private int mAccentColor, mBgColor, mTintColor, mContainerColor;
     
     private Context mContext;
+    
+    private ViewGroup mBluetoothButton;
+    private ImageView mBluetoothIcon;
+    private TextView mBluetoothTitle;
+    private TextView mBluetoothSummary;
+    private boolean mBluetoothEnabled;
+    
+    private ViewGroup mInternetButton;
+    private ImageView mInternetIcon;
+    private TextView mInternetTitle;
+    private TextView mInternetSummary;
+    private boolean mInternetEnabled;
 
     private TextView mMediaTitle, mMediaArtist;
     private ImageView mMediaPrevBtn, mMediaPlayBtn, mMediaNextBtn, mMediaAlbumArtBg, mPlayerIcon;
@@ -108,16 +152,24 @@ public class QsControlsView extends FrameLayout {
     
     private Handler mHandler;
     private Runnable mMediaUpdater;
+    
+    private Runnable mUpdateRunnableBluetooth;
+    private Runnable mUpdateRunnableInternet;
 
     public QsControlsView(Context context, AttributeSet attrs) {
         super(context, attrs);
         mContext = context;
+        mBluetoothEnabled = false;
+        mInternetEnabled = false;
         mPagerLayout = LayoutInflater.from(mContext).inflate(R.layout.qs_controls_tile_pager, null);
         mActivityLauncherUtils = new ActivityLauncherUtils(context);
         mActivityStarter = Dependency.get(ActivityStarter.class);
         mFalsingManager = Dependency.get(FalsingManager.class);
         mMediaOutputDialogFactory = Dependency.get(MediaOutputDialogFactory.class);
-        mNotifManager = Dependency.get(NotificationMediaManager.class);
+        mNotifManager = Dependency.get(NotificationMediaManager.class);       
+        mConnectivityManager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+        mSubManager = (SubscriptionManager) context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
+        mWifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
     }
 
     private final MediaController.Callback mMediaCallback = new MediaController.Callback() {
@@ -146,6 +198,14 @@ public class QsControlsView extends FrameLayout {
     protected void onFinishInflate() {
         super.onFinishInflate();
         mInflated = true;
+        mInternetButton = findViewById(R.id.qs_controls_internet_button);
+        mInternetIcon = findViewById(R.id.qs_controls_internet_icon);
+        mInternetTitle = findViewById(R.id.qs_controls_internet_title);
+        mInternetSummary = findViewById(R.id.qs_controls_internet_summary);
+        mBluetoothButton = findViewById(R.id.qs_controls_bluetooth_button);
+        mBluetoothIcon = findViewById(R.id.qs_controls_bluetooth_icon);
+        mBluetoothTitle = findViewById(R.id.qs_controls_bluetooth_title);
+        mBluetoothSummary = findViewById(R.id.qs_controls_bluetooth_summary);
 		mViewPager = findViewById(R.id.qs_controls_pager);
         mBrightnessSlider = findViewById(R.id.qs_controls_brightness_slider);
         mVolumeSlider = findViewById(R.id.qs_controls_volume_slider);
@@ -163,7 +223,10 @@ public class QsControlsView extends FrameLayout {
         collectViews(mMediaPlayerViews, mMediaPrevBtn, mMediaPlayBtn, mMediaNextBtn, 
                 mMediaAlbumArtBg, mPlayerIcon, mMediaTitle, mMediaArtist);
         collectViews(mWidgetViews, mMediaLayout);
+        initBluetoothManager();
         setupViewPager();
+        startUpdateInternetTileStateAsync();
+        startUpdateBluetoothTileStateAsync();
         mHandler = Dependency.get(Dependency.MAIN_HANDLER);
         mMediaUpdater = new Runnable() {
             @Override
@@ -191,14 +254,233 @@ public class QsControlsView extends FrameLayout {
     }
 
     private void setClickListeners() {
+        mInternetButton.setOnClickListener(v -> { showInternetDialog(v); return true; });
+        mInternetButton.setOnLongClickListener(v -> { mActivityStarter.postStartActivityDismissingKeyguard(new Intent(Settings.ACTION_WIFI_SETTINGS), 0); return true; });
+        mBluetoothButton.setOnClickListener(v -> { showBluetoothDialog(v); return true; });
+        mBluetoothButton.setOnLongClickListener(v -> { mActivityStarter.postStartActivityDismissingKeyguard(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS), 0); return true; });
         mMediaPlayBtn.setOnClickListener(view -> performMediaAction(MediaAction.TOGGLE_PLAYBACK));
         mMediaPrevBtn.setOnClickListener(view -> performMediaAction(MediaAction.PLAY_PREVIOUS));
         mMediaNextBtn.setOnClickListener(view -> performMediaAction(MediaAction.PLAY_NEXT));
-        mMediaAlbumArtBg.setOnClickListener(view -> mActivityLauncherUtils.launchMediaPlayerApp());
+        mMediaAlbumArtBg.setOnClickListener(view -> mActivityLauncherUtils.launchMediaPlayerApp()); 
         ((LaunchableImageView) mMediaAlbumArtBg).setOnLongClickListener(view -> {
             showMediaOutputDialog();
             return true;
         });
+    }
+    
+    private void initBluetoothManager() {
+        LocalBluetoothManager localBluetoothManager = LocalBluetoothManager.getInstance(mContext, null);
+
+        if (localBluetoothManager != null) {
+            localBluetoothManager.getEventManager().registerCallback(this);
+            LocalBluetoothAdapter localBluetoothAdapter = localBluetoothManager.getBluetoothAdapter();
+            int bluetoothState = BluetoothAdapter.STATE_DISCONNECTED;
+
+            synchronized (localBluetoothAdapter) {
+                if (localBluetoothAdapter.getAdapter().getState() != localBluetoothAdapter.getBluetoothState()) {
+                    localBluetoothAdapter.setBluetoothStateInt(localBluetoothAdapter.getAdapter().getState());
+                }
+                bluetoothState = localBluetoothAdapter.getBluetoothState();
+            }
+            updateBluetoothState(bluetoothState);
+        }
+    }
+
+    @Override
+    public void onBluetoothStateChanged(@AdapterState int bluetoothState) {
+        updateBluetoothState(bluetoothState);
+    }
+
+    private void updateBluetoothState(@AdapterState int bluetoothState) {
+        mBluetoothEnabled = bluetoothState == BluetoothAdapter.STATE_ON
+                || bluetoothState == BluetoothAdapter.STATE_TURNING_ON;
+        updateBluetoothTile();
+    }
+
+    private void updateBluetoothTile() {
+        if (mBluetoothButton == null
+                || mBluetoothIcon == null
+                || mBluetoothTitle == null
+                || mBluetoothSummary == null)
+            return;
+            
+        Drawable background = mBluetoothButton.getBackground();
+        
+        if (mBluetoothEnabled) {
+            background.setTint(colorActive);
+            mBluetoothIcon.setColorFilter(colorLabelActive);
+            mBluetoothTitle.setTextColor(colorLabelActive);
+            mBluetoothSummary.setText(getConnectedBluetoothDeviceName());  
+            mBluetoothSummary.setColorFilter(colorSecondaryLabelActive);
+        } else {
+            background.setTint(colorInactive);
+            mBluetoothIcon.setColorFilter(colorLabelInactive);
+            mBluetoothTitle.setTextColor(colorLabelInactive);
+            mBluetoothSummary.setText("Off");
+            mBluetoothSummary.setColorFilter(colorSecondaryLabelInactive);
+        }
+    }
+
+    private void updateInternetTile() {
+        if (mInternetButton == null
+                || mInternetIcon == null
+                || mInternetTitle == null
+                || mInternetSummary == null)
+            return;
+            
+        if (isMobileConnected()) {
+            mInternetEnabled = true;
+            mInternetIcon.setImageResource(mContext.getResources().getIdentifier("ic_signal_cellular_4_4_bar", "drawable", "android"));
+            mInternetSummary.setText(getSlotCarrierName());
+        } else {
+            mInternetEnabled = false;
+            mInternetIcon.setImageResource(mContext.getResources().getIdentifier("ic_signal_cellular_0_4_bar", "drawable", "android"));
+            mInternetSummary.setText("Off");
+        }
+        
+        if (isWifiConnected()) {
+            mInternetEnabled = true;
+            mInternetIcon.setImageResource(mContext.getResources().getIdentifier("ic_wifi_signal_4", "drawable", "android"));
+            mInternetSummary.setText(getWifiSsid());
+        } else {
+            mInternetEnabled = false;
+            mInternetIcon.setImageResource(mContext.getResources().getIdentifier("ic_wifi_signal_0", "drawable", "android"));
+            mInternetSummary.setText("Off");
+        }
+
+        Drawable background = mInternetButton.getBackground();
+
+        if (mInternetEnabled) {
+            background.setTint(colorActive);
+            mInternetIcon.setColorFilter(colorLabelActive);
+            mInternetTitle.setTextColor(colorLabelActive);
+            mInternetSummary.setColorFilter(colorSecondaryLabelActive);
+        } else {
+            background.setTint(colorInactive);
+            mInternetIcon.setColorFilter(colorLabelInactive);
+            mInternetTitle.setTextColor(colorLabelInactive);
+            mInternetSummary.setColorFilter(colorSecondaryLabelInactive);
+        }
+    }
+    
+    private String getConnectedBluetoothDeviceName() {
+    BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+        synchronized (bluetoothAdapter) {
+            if (bluetoothAdapter.isEnabled()) {
+                for (BluetoothDevice bluetoothDevice : mBluetoothAdapter.getBondedDevices()) {
+                    if (bluetoothDevice.isConnected()) { 
+                        String name = next.getName();
+                        return name;
+                    }
+                }
+            }
+            return null;
+        }
+    }
+    
+    public boolean isMobileConnected() {
+        try {
+            NetworkInfo mobile = mConnectivityManager.getNetworkInfo(ConnectivityManager.TYPE_MOBILE);
+            return mobile.isConnected();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+    
+    private boolean isWifiConnected() {
+        final Network network = mConnectivityManager.getActiveNetwork();
+        if (network != null) {
+            NetworkCapabilities capabilities = mConnectivityManager.getNetworkCapabilities(network);
+            return capabilities != null && capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI);
+        } else {
+            return false;
+        }
+    }
+
+    private String getSlotCarrierName() {
+        CharSequence result = mContext.getResources().getString(R.string.quick_settings_internet_label);
+        int subId = mSubManager.getDefaultDataSubscriptionId();
+        final List<SubscriptionInfo> subInfoList = mSubManager.getActiveSubscriptionInfoList(true);
+        if (subInfoList != null) {
+            for (SubscriptionInfo subInfo : subInfoList) {
+                if (subId == subInfo.getSubscriptionId()) {
+                    result = subInfo.getDisplayName();
+                    break;
+                }
+            }
+        }
+        return result.toString();
+    }
+
+    private String getWifiSsid() {
+        final WifiInfo wifiInfo = mWifiManager.getConnectionInfo();
+        if (wifiInfo.getHiddenSSID() || wifiInfo.getSSID() == WifiManager.UNKNOWN_SSID) {
+            return mContext.getResources().getString(R.string.quick_settings_wifi_label);
+        } else {
+            return wifiInfo.getSSID().replace("\"", "");
+        }
+    }
+    
+    public void startUpdateBluetoothTileStateAsync() {
+        AsyncTask.execute(new Runnable() {
+            public void run() {
+                startUpdateBluetoothTileState();
+            }
+        });
+    }
+    
+    public void startUpdateBluetoothTileState() {
+        Runnable runnable = mUpdateRunnableBluetooth;
+        
+        if (runnable == null) {
+            mUpdateRunnableBluetooth = new Runnable() {
+                public void run() {
+                    updateBluetoothTile();
+                    scheduleBluetoothUpdate();
+                }
+            };
+        } else {
+            new Handler(Looper.getMainLooper()).removeCallbacks(runnable);
+        }
+        scheduleBluetoothUpdate();
+    }
+    
+    public void scheduleBluetoothUpdate() {
+        Runnable runnable;
+        if ((runnable = mUpdateRunnableBluetooth) != null) {
+            new Handler(Looper.getMainLooper()).postDelayed(runnable, 1000);
+        }
+    }
+    
+    public void startUpdateInternetTileStateAsync() {
+        AsyncTask.execute(new Runnable() {
+            public void run() {
+                startUpdateInternetTileState();
+            }
+        });
+    }
+
+    public void startUpdateInternetTileState() {
+        Runnable runnable = mUpdateRunnableInternet;
+        if (runnable == null) {
+            mUpdateRunnableInternet = new Runnable() {
+                public void run() {
+                    updateInternetTile();
+                    scheduleInternetUpdate();
+                }
+            };
+        } else {
+            new Handler(Looper.getMainLooper()).removeCallbacks(runnable);
+        }
+        scheduleInternetUpdate();
+    }
+
+    public void scheduleInternetUpdate() {
+        Runnable runnable;
+        if ((runnable = mUpdateRunnableInternet) != null) {
+            new Handler(Looper.getMainLooper()).postDelayed(runnable, 1000);
+        }
     }
 
     private void clearMediaMetadata() {
@@ -471,6 +753,16 @@ public class QsControlsView extends FrameLayout {
         helper.sendMediaButtonEvent(event, true);
         event = KeyEvent.changeAction(event, KeyEvent.ACTION_UP);
         helper.sendMediaButtonEvent(event, true);
+    }
+    
+    private void showBluetoothDialog(View view) {
+        mHandler.post(() -> mBluetoothDialogFactory.create(true, view));
+    }
+    
+    private void showInternetDialog(View view) {
+        mHandler.post(() -> mInternetDialogFactory.create(true,
+                mAccessPointController.canConfigMobileData(),
+                mAccessPointController.canConfigWifi(), view));
     }
 
     private void showMediaOutputDialog() {

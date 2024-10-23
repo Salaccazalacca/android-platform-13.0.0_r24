@@ -16,13 +16,122 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="2dp">
 
+            <com.android.systemui.animation.view.LaunchableLinearLayout
+                android:gravity="start|center"
+                android:layout_gravity="start|center"
+                android:orientation="horizontal"
+                android:id="@+id/qs_controls_internet_button"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/qs_tile_height"
+                android:layout_marginEnd="8dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                app:layout_constraintEnd_toStartOf="@id/qs_controls_bluetooth_button"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent">
+                <ImageView
+                    android:layout_gravity="start|center"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:id="@+id/qs_controls_internet_icon"
+                    android:src="@drawable/ic_statusbar_wifi" />
+            <LinearLayout
+                android:orientation="vertical"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">              
+                <TextView
+                    android:textAppearance="@style/TextAppearance.QS.TileLabel"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:id="@+id/qs_controls_internet_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="start"
+                    android:text="@string/quick_settings_internet_label"
+                    android:textDirection="locale"
+                    android:ellipsize="marquee"
+                    android:marqueeRepeatLimit="1"
+                    android:singleLine="true"
+                    android:focusable="false"
+                    android:layout_marginStart="16dp" />
+                <TextView
+                    android:textAppearance="@style/TextAppearance.QS.TileLabel.Secondary"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:id="@+id/qs_hyper_wifi_summary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="start"
+                    android:text="Off"
+                    android:textDirection="locale"
+                    android:ellipsize="marquee"
+                    android:marqueeRepeatLimit="1"
+                    android:singleLine="true"
+                    android:focusable="false"
+                    android:layout_marginStart="16dp" />
+            </LinearLayout>
+            </com.android.systemui.animation.view.LaunchableLinearLayout>
+            
+            <com.android.systemui.animation.view.LaunchableLinearLayout
+                android:gravity="start|center"
+                android:layout_gravity="start|center"
+                android:orientation="horizontal"
+                android:id="@+id/qs_controls_bluetooth_button"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/qs_tile_height"
+                android:layout_marginStart="8dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toEndOf="@id/qs_controls_internet_button"
+                app:layout_constraintTop_toTopOf="parent">
+                <ImageView
+                    android:layout_gravity="start|center"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:id="@+id/qs_controls_bluetooth_icon"
+                    android:src="@drawable/qs_bluetooth_icon_on" />
+            <LinearLayout
+                android:orientation="vertical"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">                    
+                <TextView
+                    android:textAppearance="@style/TextAppearance.QS.TileLabel"
+                    android:textColor="?android:textColorPrimary"
+                    android:id="@+id/qs_controls_bluetooth_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="start"
+                    android:text="@string/quick_settings_bluetooth_label"
+                    android:textDirection="locale"
+                    android:ellipsize="marquee"
+                    android:marqueeRepeatLimit="1"
+                    android:singleLine="true"
+                    android:focusable="false"
+                    android:layout_marginStart="16dp" />
+                <TextView
+                    android:textAppearance="@style/TextAppearance.QS.TileLabel.Secondary"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:id="@+id/qs_controls_bluetooth_summary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="start"
+                    android:text="Off"
+                    android:textDirection="locale"
+                    android:ellipsize="marquee"
+                    android:marqueeRepeatLimit="1"
+                    android:singleLine="true"
+                    android:focusable="false"
+                    android:layout_marginStart="16dp" />
+            </LinearLayout>
+            </com.android.systemui.animation.view.LaunchableLinearLayout>
+            
         <androidx.viewpager.widget.ViewPager
             android:id="@+id/qs_controls_pager"
             android:layout_width="0dp"
             android:layout_height="@dimen/qs_controls_center_height"
+            android:layout_marginTop="16dp"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toStartOf="@id/qs_controls_slider_container"
-            app:layout_constraintTop_toTopOf="parent">
+            app:layout_constraintTop_toBottomOf="@id/qs_controls_internet_button">
             <include
                 android:id="@+id/qs_controls_tile_pager"
                 layout="@layout/qs_controls_tile_pager" />
@@ -34,10 +143,11 @@
             android:layout_width="0dp"
             android:layout_height="@dimen/qs_controls_center_height"
             android:gravity="center"
+            android:layout_marginTop="16dp"
             android:layout_marginEnd="@dimen/qs_controls_slider_container_margin_end"
             app:layout_constraintStart_toEndOf="@id/qs_controls_pager"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="parent">
+            app:layout_constraintTop_toBottomOf="@id/qs_controls_bluetooth_button">
 
             <com.android.systemui.qs.BrightnessSlider
                 android:id="@+id/qs_controls_brightness_slider"

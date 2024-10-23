@@ -68,6 +68,7 @@ import com.android.systemui.power.EnhancedEstimates;
 import com.android.systemui.power.PowerUI;
 import com.android.systemui.privacy.PrivacyItemController;
 import com.android.systemui.qs.ReduceBrightColorsController;
+import com.android.systemui.qs.tiles.dialog.BluetoothDialogFactory;
 import com.android.systemui.qs.tiles.dialog.InternetDialogFactory;
 import com.android.systemui.recents.OverviewProxyService;
 import com.android.systemui.screenrecord.RecordingController;
@@ -76,6 +77,7 @@ import com.android.systemui.shade.ShadeController;
 import com.android.systemui.shared.system.ActivityManagerWrapper;
 import com.android.systemui.shared.system.DevicePolicyManagerWrapper;
 import com.android.systemui.shared.system.PackageManagerWrapper;
+import com.android.systemui.statusbar.connectivity.AccessPointController;
 import com.android.systemui.statusbar.CommandQueue;
 import com.android.systemui.statusbar.NotificationListener;
 import com.android.systemui.statusbar.NotificationLockscreenUserManager;
@@ -238,10 +240,12 @@ public class Dependency {
 
     @Inject DumpManager mDumpManager;
 
+    @Inject Lazy<AccessPointController> mAccessPointController;
     @Inject Lazy<ActivityStarter> mActivityStarter;
     @Inject Lazy<BroadcastDispatcher> mBroadcastDispatcher;
     @Inject Lazy<AsyncSensorManager> mAsyncSensorManager;
     @Inject Lazy<BluetoothController> mBluetoothController;
+    @Inject Lazy<BluetoothDialogFactory> mBluetoothDialogFactory;    
     @Inject Lazy<LocationController> mLocationController;
     @Inject Lazy<RotationLockController> mRotationLockController;
     @Inject Lazy<ZenModeController> mZenModeController;
@@ -376,12 +380,14 @@ public class Dependency {
         mProviders.put(MAIN_HANDLER, mMainHandler::get);
         mProviders.put(MAIN_EXECUTOR, mMainExecutor::get);
         mProviders.put(BACKGROUND_EXECUTOR, mBackgroundExecutor::get);
+        mProviders.put(AccessPointController.class, mAccessPointController::get);        
         mProviders.put(ActivityStarter.class, mActivityStarter::get);
         mProviders.put(BroadcastDispatcher.class, mBroadcastDispatcher::get);
 
         mProviders.put(AsyncSensorManager.class, mAsyncSensorManager::get);
 
         mProviders.put(BluetoothController.class, mBluetoothController::get);
+        mProviders.put(BluetoothDialogFactory.class, mBluetoothDialogFactory::get);        
         mProviders.put(SensorPrivacyManager.class, mSensorPrivacyManager::get);
 
         mProviders.put(LocationController.class, mLocationController::get);
